@@ -1,0 +1,6 @@
+model_mode,L2,attn_type,clip,dropout,hidden_size,learning_rate,loc_size,rnn_type,tim_size,uid_size,acc
+markov,,,,,,,,,,,0.082
+simple,1.00E-06,dot,5,0.3,500,0.0001,500,LSTM,10,40,0.09587167
+simple_long,1.00E-05,dot,5,0.5,200,0.0007,500,LSTM,10,40,0.117923069
+attn_avg_long_user,1.00E-05,dot,5,0.2,300,0.0007,100,LSTM,10,40,0.133689175
+attn_local_long,1.00E-06,dot,2,0.6,300,0.0001,300,LSTM,20,40,0.145342384
