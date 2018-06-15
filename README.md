@@ -21,13 +21,14 @@ cPickle is used in the project to store the preprocessed data and parameters. Wh
 > ```
 
 The codes contain four network model (simple, simple_long, attn_avg_long_user, attn_local_long) and a baseline model (Markov). 
-model_in_code | model_in_paper | top-1 accuracy (pre-trained)
---- |---|---
-markov | markov | 0.082
-simple | RNN-short | 0.096
-simple_long | RNN-long | 0.118
-attn_avg_long_user | Ours attn-1 | 0.133
-attn_local_long | Ours attn-2 | 0.145
+
+|model_in_code | model_in_paper | top-1 accuracy (pre-trained)|
+:---: |:---:|:---:
+|markov | markov | 0.082|
+|simple | RNN-short | 0.096|
+|simple_long | RNN-long | 0.118|
+|attn_avg_long_user | Ours attn-1 | 0.133|
+|attn_local_long | Ours attn-2 | 0.145|
 
 Other parameter settings for training the model can refer to the main.py file. 
 
