@@ -10,7 +10,6 @@ import os
 import json
 import time
 import argparse
-import setproctitle
 import numpy as np
 from json import encoder
 
@@ -183,7 +182,6 @@ if __name__ == '__main__':
     np.random.seed(1)
     torch.manual_seed(1)
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    setproctitle.setproctitle('trajpre-public@fengjie')
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--loc_emb_size', type=int, default=500, help="location embeddings size")
