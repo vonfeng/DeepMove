@@ -19,7 +19,7 @@ cPickle is used in the project to store the preprocessed data and parameters. Wh
 - /pretrain
     - /simple
         - [res.m](https://github.com/vonfeng/DeepMove/blob/master/pretrain/simple/res.m) # pretrained model file
-        - [res.rs](https://github.com/vonfeng/DeepMove/blob/master/pretrain/simple/res.rs) # detailed evaluation results
+        - [res.json](https://github.com/vonfeng/DeepMove/blob/master/pretrain/simple/res.json) # detailed evaluation results
         - [res.txt](https://github.com/vonfeng/DeepMove/blob/master/pretrain/simple/res.txt) # evaluation results
     - /simple_long
     - /attn_local_long
