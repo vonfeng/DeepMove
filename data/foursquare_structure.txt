@@ -1,0 +1,48 @@
+data_neural (used for training the NN)
+    - <User ID>
+        -- sessions
+            --- key (str), value (list)
+                ---- key : session id (str)
+                ---- value: check-in (pair of location-time) (list)
+        -- train_loc
+            --- key (str), value (list of list)
+                ---- key: location ID
+                ---- value : number of visit in the training set
+        -- train --> list of session id used for training ?
+        -- test  --> list of session id used for testing  ?
+        -- explore   : 
+        -- entropy   :
+        -- rg        :
+        -- valid_len : #sessions for testing
+        -- pred_len  : #session for training
+
+data_filter
+    - <User ID>
+        -- session_count
+        -- raw_sessions
+        -- topk
+        -- topk_count
+        -- sessions
+            --- key (str), value (list)
+                ---- key : session id (str)
+                ---- value: check-in (pair of location-time) (list)
+   
+vid_lookup
+    - <Location ID>
+        -- List
+            --- Latitude
+            --- Longitude
+            
+vid_list
+    - key (str), value (list)
+        -- key : original venue id ? (str)
+        -- value : (list) (e.g., [701, 47]) (1st part is the generated venue id, 2nd part is the number of visits)
+        -- Unknown location given a key, value pair [0, -1]
+        
+uid_list
+    - key (str), value (list)
+        -- key : original user id ? (str)
+        -- value : ??? (list) (e.g., [0, 7])
+        
+parameters
+    - Parameters used in the model
