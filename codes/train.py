@@ -5,129 +5,183 @@ from __future__ import division
 import torch
 from torch.autograd import Variable
 
+import json
 import numpy as np
-import cPickle as pickle
-from collections import deque, Counter
-
+try:
+    import cPickle as pickle
+except:
+    import pickle
+from collections import deque, Counter, defaultdict
 
 class RnnParameterData(object):
     def __init__(self, loc_emb_size=500, uid_emb_size=40, voc_emb_size=50, tim_emb_size=10, hidden_size=500,
                  lr=1e-3, lr_step=3, lr_decay=0.1, dropout_p=0.5, L2=1e-5, clip=5.0, optim='Adam',
                  history_mode='avg', attn_type='dot', epoch_max=30, rnn_type='LSTM', model_mode="simple",
-                 data_path='../data/', save_path='../results/', data_name='foursquare'):
+                 data_path='../data/', save_path='../results/', data_name='foursquare', use_cuda=True, data_mode='json'):
         self.data_path = data_path
         self.save_path = save_path
         self.data_name = data_name
-        data = pickle.load(open(self.data_path + self.data_name + '.pk', 'rb'))
+        try:
+            data = load_dataset(self.data_path, self.data_name, mode=data_mode)
+        except:
+            data = load_dataset(self.data_path, self.data_name, mode='json')
         self.vid_list = data['vid_list']
         self.uid_list = data['uid_list']
         self.data_neural = data['data_neural']
 
-        self.tim_size = 48
-        self.loc_size = len(self.vid_list)
-        self.uid_size = len(self.uid_list)
-        self.loc_emb_size = loc_emb_size
-        self.tim_emb_size = tim_emb_size
-        self.voc_emb_size = voc_emb_size
-        self.uid_emb_size = uid_emb_size
-        self.hidden_size = hidden_size
+        self.tim_size = 48                 # Number of timeslot bins (48 are 24 hours for weekdays + 24 hours for weekends)
+        self.loc_size = len(self.vid_list) # |L| (i.e., #locations)
+        self.uid_size = len(self.uid_list) # |U| (i.e., #users)
+        self.loc_emb_size = loc_emb_size   # size of location embedding
+        self.tim_emb_size = tim_emb_size   # size of time embedding
+        self.voc_emb_size = voc_emb_size   # size of ???
+        self.uid_emb_size = uid_emb_size   # size of user embedding
+        self.hidden_size = hidden_size     # size of hidden layer
 
-        self.epoch = epoch_max
-        self.dropout_p = dropout_p
-        self.use_cuda = True
-        self.lr = lr
-        self.lr_step = lr_step
-        self.lr_decay = lr_decay
-        self.optim = optim
-        self.L2 = L2
-        self.clip = clip
+        self.epoch = epoch_max             # number of iteration (default: 30)
+        self.dropout_p = dropout_p         # dropout_rate (default: 0.5)
+        self.use_cuda = use_cuda           # whether using GPU or CPU (default: True --> using GPU)
+        self.lr = lr                       # learning rate of optimization algorithm (default: 0.001)
+        self.lr_step = lr_step             # number of epochs with no improvement after which learning rate will be reduced (default: 3)
+        self.lr_decay = lr_decay           # factor by which the learning rate will be reduced. new_lr = lr * factor (default: 0.1)
+        self.optim = optim                 # optimization algorithm used (default: Adam)
+        self.L2 = L2                       # l2 regularization weight
+        self.clip = clip                   # gradient clip (default: 5.0)
 
-        self.attn_type = attn_type
-        self.rnn_type = rnn_type
-        self.history_mode = history_mode
-        self.model_mode = model_mode
+        self.attn_type = attn_type         # attention mode used ['dot', 'general', 'concat'] (default: 'dot')
+        self.rnn_type = rnn_type           # RNN algorithm used ['GRU', 'LSTM', 'RNN'] (default: 'LSTM')
+        self.history_mode = history_mode   # aggregation method used for historical data ['avg', 'max', 'whole'] (default: 'avg')
+        self.model_mode = model_mode       # model used for the training ['simple', 'simple_long', 'attn_avg_long_user', 'attn_local_long']
 
 
+"""
+Utility functions
+"""
+def load_dataset(data_path, data_name, mode='pickle'):
+    if mode == 'json':
+        return json.load(open('/'.join([data_path, data_name]) + '.json', 'r'))
+    else:
+        return pickle.load(open('/'.join([data_path, data_name]) + '.pk', 'rb'))
+    
+    
+def extract_history(data_neural, sessions, train_id, mode, u, c, sort=True):
+    ### Put some historical data in the variable "history"
+    history = []
+    if mode == 'test': # When performing test, first put the history from the training sessions
+        test_id = data_neural[u]['train']
+        for tt in test_id:
+            history.extend([(s[0], s[1]) for s in sessions[str(tt)]])
+    for j in range(c):
+        history.extend([(s[0], s[1]) for s in sessions[str(train_id[j])]])
+    ### Sort based on the time
+    if sort:
+        history = sorted(history, key=lambda x: x[1], reverse=False)
+    return history
+
+
+def extract_count(history):
+    history_tim = [t[1] for t in history]
+    temp = Counter()
+    ### Count the visit to the location from the historical data
+    for x in history_tim:
+        temp[x] += 1
+    history_count = list(temp.values())
+    return history_tim, history_count
+
+
+def torch_trace(loc_np, tim_np, target, history_loc=None, history_tim=None, history_count=None):
+    trace = {}
+    trace['loc'] = Variable(torch.LongTensor(loc_np))    # Tensor shape : (None, 1)
+    trace['tim'] = Variable(torch.LongTensor(tim_np))    # Tensor shape : (None, 1)
+    trace['target'] = Variable(torch.LongTensor(target)) # Tensor shape : (None)
+    if history_loc is not None:
+        trace['history_loc'] = Variable(torch.LongTensor(history_loc))
+    if history_tim is not None:
+        trace['history_tim'] = Variable(torch.LongTensor(history_tim))
+    if history_count is not None:
+        trace['history_count'] = history_count
+    return trace
+
+"""
+A simple (short) history generation -- using aggregation (average / max) or concatenation
+
+data_neural : data used for generating the training the neural network (Obtained from the dataset).
+mode        : training or testing phase ['train', 'test']
+mode2       : history_mode used for generating the history ['avg', 'max', 'whole'] (None means 'whole')
+candidate   : list of user ids (if None, then use the ids from data_neural.keys())
+"""
 def generate_input_history(data_neural, mode, mode2=None, candidate=None):
-    data_train = {}
-    train_idx = {}
+    data_train = {} # Can be either for train / test / val
+    train_idx = {}  # Can be either for train / test / val
     if candidate is None:
-        candidate = data_neural.keys()
-    for u in candidate:
-        sessions = data_neural[u]['sessions']
+        candidate = data_neural.keys() # All the user candidates
+    for u in candidate: # For each user
+        sessions = data_neural[u]['sessions'] # User session
         train_id = data_neural[u][mode]
         data_train[u] = {}
-        for c, i in enumerate(train_id):
+        
+        for c, i in enumerate(train_id): # For each session in the "training" / "testing"
+            ### Skip the first session in training
             if mode == 'train' and c == 0:
                 continue
-            session = sessions[i]
-            trace = {}
-            loc_np = np.reshape(np.array([s[0] for s in session[:-1]]), (len(session[:-1]), 1))
-            tim_np = np.reshape(np.array([s[1] for s in session[:-1]]), (len(session[:-1]), 1))
-            # voc_np = np.reshape(np.array([s[2] for s in session[:-1]]), (len(session[:-1]), 27))
+            session = sessions[str(i)]
+            ### Removing the last for training
+            loc_np = np.reshape(np.array([s[0] for s in session[:-1]]), (len(session[:-1]), 1)) # Location array, in 2D
+            tim_np = np.reshape(np.array([s[1] for s in session[:-1]]), (len(session[:-1]), 1)) # Time array, in 2D
+            ### Removing the first for testing (target label)
             target = np.array([s[0] for s in session[1:]])
-            trace['loc'] = Variable(torch.LongTensor(loc_np))
-            trace['target'] = Variable(torch.LongTensor(target))
-            trace['tim'] = Variable(torch.LongTensor(tim_np))
-            # trace['voc'] = Variable(torch.LongTensor(voc_np))
 
-            history = []
-            if mode == 'test':
-                test_id = data_neural[u]['train']
-                for tt in test_id:
-                    history.extend([(s[0], s[1]) for s in sessions[tt]])
-            for j in range(c):
-                history.extend([(s[0], s[1]) for s in sessions[train_id[j]]])
-            history = sorted(history, key=lambda x: x[1], reverse=False)
+            ### Put some historical data in the variable "history"
+            history = extract_history(data_neural, sessions, train_id, mode, u, c, sort=True)
+            history_count = None
 
             # merge traces with same time stamp
             if mode2 == 'max':
-                history_tmp = {}
+                """
+                Putting the list of location visited by the user in the particular timeslot
+                """
+                history_tmp = defaultdict(list)
                 for tr in history:
-                    if tr[1] not in history_tmp:
-                        history_tmp[tr[1]] = [tr[0]]
-                    else:
-                        history_tmp[tr[1]].append(tr[0])
+                    history_tmp[tr[1]].append(tr[0])
+                
                 history_filter = []
                 for t in history_tmp:
-                    if len(history_tmp[t]) == 1:
-                        history_filter.append((history_tmp[t][0], t))
+                    selected = history_tmp[t]
+                    if len(selected) == 1: # If only 1 location on the list
+                        history_filter.append((selected[0], t))
                     else:
-                        tmp = Counter(history_tmp[t]).most_common()
-                        if tmp[0][1] > 1:
-                            history_filter.append((history_tmp[t][0], t))
-                        else:
+                        tmp = Counter(selected).most_common() # Find the one that is most common
+                        if tmp[0][1] > 1: # If no competition, then just put it
+                            history_filter.append((selected[0], t))
+                        else: # If there is competition, select randomly
                             ti = np.random.randint(len(tmp))
                             history_filter.append((tmp[ti][0], t))
+                ### Replace history with the aggregated version
                 history = history_filter
                 history = sorted(history, key=lambda x: x[1], reverse=False)
             elif mode2 == 'avg':
-                history_tim = [t[1] for t in history]
-                history_count = [1]
-                last_t = history_tim[0]
-                count = 1
-                for t in history_tim[1:]:
-                    if t == last_t:
-                        count += 1
-                    else:
-                        history_count[-1] = count
-                        history_count.append(1)
-                        last_t = t
-                        count = 1
+                ### Calculate how many times a location visited (to serve as the "average" count found in the historical data)
+                history_tim, history_count = extract_count(history)
             ################
 
             history_loc = np.reshape(np.array([s[0] for s in history]), (len(history), 1))
             history_tim = np.reshape(np.array([s[1] for s in history]), (len(history), 1))
-            trace['history_loc'] = Variable(torch.LongTensor(history_loc))
-            trace['history_tim'] = Variable(torch.LongTensor(history_tim))
-            if mode2 == 'avg':
-                trace['history_count'] = history_count
-
+            ### Convert into torch tensor
+            trace = torch_trace(loc_np, tim_np, target, history_loc=history_loc, history_tim=history_tim, history_count=history_count)
             data_train[u][i] = trace
         train_idx[u] = train_id
     return data_train, train_idx
 
 
+"""
+Generate a long history using a simple concatenation (i.e., simple_long). 
+The history session index are squeezed into a single index which means that 
+there is no difference between "short-term" and "long-term" sequence.
+
+data_neural : data used for generating the training the neural network (Obtained from the dataset).
+mode        : training or testing phase ['train', 'test']
+candidate   : list of user ids (if None, then use the ids from data_neural.keys())
+"""
 def generate_input_long_history2(data_neural, mode, candidate=None):
     data_train = {}
     train_idx = {}
@@ -138,28 +192,34 @@ def generate_input_long_history2(data_neural, mode, candidate=None):
         train_id = data_neural[u][mode]
         data_train[u] = {}
 
-        trace = {}
         session = []
+        ### Put all sessions altogether to become a long sequence
         for c, i in enumerate(train_id):
-            session.extend(sessions[i])
-        target = np.array([s[0] for s in session[1:]])
+            session.extend(sessions[str(i)])
+            ### Generate the target variable as the predicted location
+            target = np.array([s[0] for s in session[1:]])
 
-        loc_tim = []
-        loc_tim.extend([(s[0], s[1]) for s in session[:-1]])
-        loc_np = np.reshape(np.array([s[0] for s in loc_tim]), (len(loc_tim), 1))
-        tim_np = np.reshape(np.array([s[1] for s in loc_tim]), (len(loc_tim), 1))
-        trace['loc'] = Variable(torch.LongTensor(loc_np))
-        trace['tim'] = Variable(torch.LongTensor(tim_np))
-        trace['target'] = Variable(torch.LongTensor(target))
-        data_train[u][i] = trace
-        # train_idx[u] = train_id
-        if mode == 'train':
-            train_idx[u] = [0, i]
-        else:
-            train_idx[u] = [i]
+            ### Location and time pair used for training
+            loc_np = np.reshape(np.array([s[0] for s in session[:-1]]), (len(session[:-1]), 1))
+            tim_np = np.reshape(np.array([s[1] for s in session[:-1]]), (len(session[:-1]), 1))
+            ### Convert into torch tensor
+            trace = torch_trace(loc_np, tim_np, target)
+            data_train[u][i] = trace
+
+            if mode == 'train':
+                train_idx[u] = [0, i]
+            else:
+                train_idx[u] = [i]
     return data_train, train_idx
 
 
+"""
+Generate a long history based on all historical + recent data.
+
+data_neural : data used for generating the training the neural network (Obtained from the dataset).
+mode        : training or testing phase ['train', 'test']
+candidate   : list of user ids (if None, then use the ids from data_neural.keys())
+"""
 def generate_input_long_history(data_neural, mode, candidate=None):
     data_train = {}
     train_idx = {}
@@ -170,51 +230,38 @@ def generate_input_long_history(data_neural, mode, candidate=None):
         train_id = data_neural[u][mode]
         data_train[u] = {}
         for c, i in enumerate(train_id):
-            trace = {}
             if mode == 'train' and c == 0:
                 continue
-            session = sessions[i]
+            session = sessions[str(i)]
             target = np.array([s[0] for s in session[1:]])
 
-            history = []
-            if mode == 'test':
-                test_id = data_neural[u]['train']
-                for tt in test_id:
-                    history.extend([(s[0], s[1]) for s in sessions[tt]])
-            for j in range(c):
-                history.extend([(s[0], s[1]) for s in sessions[train_id[j]]])
-
-            history_tim = [t[1] for t in history]
-            history_count = [1]
-            last_t = history_tim[0]
-            count = 1
-            for t in history_tim[1:]:
-                if t == last_t:
-                    count += 1
-                else:
-                    history_count[-1] = count
-                    history_count.append(1)
-                    last_t = t
-                    count = 1
+            ### Put some historical data in the variable "history"
+            history = extract_history(data_neural, sessions, train_id, mode, u, c, sort=True)
+            ### Calculate how many times a location visited (to serve as the "average" count found in the historical data)
+            history_tim, history_count = extract_count(history)
 
             history_loc = np.reshape(np.array([s[0] for s in history]), (len(history), 1))
             history_tim = np.reshape(np.array([s[1] for s in history]), (len(history), 1))
-            trace['history_loc'] = Variable(torch.LongTensor(history_loc))
-            trace['history_tim'] = Variable(torch.LongTensor(history_tim))
-            trace['history_count'] = history_count
 
+            ### Consider the data from the historical data + current session
             loc_tim = history
             loc_tim.extend([(s[0], s[1]) for s in session[:-1]])
             loc_np = np.reshape(np.array([s[0] for s in loc_tim]), (len(loc_tim), 1))
             tim_np = np.reshape(np.array([s[1] for s in loc_tim]), (len(loc_tim), 1))
-            trace['loc'] = Variable(torch.LongTensor(loc_np))
-            trace['tim'] = Variable(torch.LongTensor(tim_np))
-            trace['target'] = Variable(torch.LongTensor(target))
+            ### Convert into torch tensor
+            trace = torch_trace(loc_np, tim_np, target, history_loc=history_loc, history_tim=history_tim, history_count=history_count)
             data_train[u][i] = trace
         train_idx[u] = train_id
     return data_train, train_idx
 
 
+"""
+Generate queue for training / testing data
+
+train_idx   : index of training / testing data
+mode        : queue generation method ['random', 'normal']
+mode2       : training or testing phase ['train', 'test']
+"""
 def generate_queue(train_idx, mode, mode2):
     """return a deque. You must use it by train_queue.popleft()"""
     user = train_idx.keys()
@@ -242,6 +289,9 @@ def generate_queue(train_idx, mode, mode2):
     return train_queue
 
 
+"""
+Get accuracy of top-1, top-5, and top-10
+"""
 def get_acc(target, scores):
     """target and scores are torch cuda Variable"""
     target = target.data.cpu().numpy()
@@ -258,33 +308,48 @@ def get_acc(target, scores):
             acc[2] += 1
     return acc
 
+"""
+Unused function
+"""
+# def get_hint(target, scores, users_visited):
+#     """target and scores are torch cuda Variable"""
+#     target = target.data.cpu().numpy()
+#     val, idxx = scores.data.topk(1, 1)
+#     predx = idxx.cpu().numpy()
+#     hint = np.zeros((3,))
+#     count = np.zeros((3,))
+#     count[0] = len(target)
+#     for i, p in enumerate(predx):
+#         t = target[i]
+#         if t == p[0] and t > 0:
+#             hint[0] += 1
+#         if t in users_visited:
+#             count[1] += 1
+#             if t == p[0] and t > 0:
+#                 hint[1] += 1
+#         else:
+#             count[2] += 1
+#             if t == p[0] and t > 0:
+#                 hint[2] += 1
+#     return hint, count
 
-def get_hint(target, scores, users_visited):
-    """target and scores are torch cuda Variable"""
-    target = target.data.cpu().numpy()
-    val, idxx = scores.data.topk(1, 1)
-    predx = idxx.cpu().numpy()
-    hint = np.zeros((3,))
-    count = np.zeros((3,))
-    count[0] = len(target)
-    for i, p in enumerate(predx):
-        t = target[i]
-        if t == p[0] and t > 0:
-            hint[0] += 1
-        if t in users_visited:
-            count[1] += 1
-            if t == p[0] and t > 0:
-                hint[1] += 1
-        else:
-            count[2] += 1
-            if t == p[0] and t > 0:
-                hint[2] += 1
-    return hint, count
 
+"""
+Evaluating the model
 
+data      : 
+run_idx   : train_idx / test_idx
+mode      : training / testing phase ['train', 'test']
+lr        : learning rate of optimizer (used for gradient clipping)
+clip      : gradient clip
+model     : model used
+optimizer : optimization variable (e.g., Adam)
+criterion : evaluation metric (e.g., negative log likelihood)
+mode2     : model used for the training ['simple', 'simple_long', 'attn_avg_long_user', 'attn_local_long']
+"""
 def run_simple(data, run_idx, mode, lr, clip, model, optimizer, criterion, mode2=None):
     """mode=train: return model, avg_loss
-       mode=test: return avg_loss,avg_acc,users_rnn_acc"""
+       mode=test: return avg_loss, avg_acc, users_rnn_acc"""
     run_queue = None
     if mode == 'train':
         model.train(True)
@@ -310,6 +375,9 @@ def run_simple(data, run_idx, mode, lr, clip, model, optimizer, criterion, mode2
             history_loc = data[u][i]['history_loc'].cuda()
             history_tim = data[u][i]['history_tim'].cuda()
 
+        """
+        Forward process
+        """
         if mode2 in ['simple', 'simple_long']:
             scores = model(loc, tim)
         elif mode2 == 'attn_avg_long_user':
@@ -353,6 +421,9 @@ def run_simple(data, run_idx, mode, lr, clip, model, optimizer, criterion, mode2
         return avg_loss, avg_acc, users_rnn_acc
 
 
+"""
+Evaluation using a simple markov chain
+"""
 def markov(parameters, candidate):
     validation = {}
     for u in candidate:
