@@ -369,7 +369,7 @@ def run_simple(data, run_idx, mode, lr, clip, model, optimizer, criterion, mode2
         loc = data[u][i]['loc'].cuda()
         tim = data[u][i]['tim'].cuda()
         target = data[u][i]['target'].cuda()
-        uid = Variable(torch.LongTensor([u])).cuda()
+        uid = Variable(torch.LongTensor([int(u)])).cuda()
 
         if 'attn' in mode2:
             history_loc = data[u][i]['history_loc'].cuda()
@@ -407,7 +407,7 @@ def run_simple(data, run_idx, mode, lr, clip, model, optimizer, criterion, mode2
             users_acc[u][0] += len(target)
             acc = get_acc(target, scores)
             users_acc[u][1] += acc[2]
-        total_loss.append(loss.data.cpu().numpy()[0])
+        total_loss.append(loss.data.cpu().numpy())
 
     avg_loss = np.mean(total_loss, dtype=np.float64)
     if mode == 'train':
@@ -432,13 +432,13 @@ def markov(parameters, candidate):
         test_id = parameters.data_neural[u]['test']
         trace_train = []
         for tr in train_id:
-            trace_train.append([t[0] for t in traces[tr]])
+            trace_train.append([t[0] for t in traces[str(tr)]])
         locations_train = []
         for t in trace_train:
             locations_train.extend(t)
         trace_test = []
         for tr in test_id:
-            trace_test.append([t[0] for t in traces[tr]])
+            trace_test.append([t[0] for t in traces[str(tr)]])
         locations_test = []
         for t in trace_test:
             locations_test.extend(t)
@@ -454,9 +454,9 @@ def markov(parameters, candidate):
         sessions = parameters.data_neural[u]['sessions']
         train_id = parameters.data_neural[u]['train']
         for i in train_id:
-            for j, s in enumerate(sessions[i][:-1]):
+            for j, s in enumerate(sessions[str(i)][:-1]):
                 loc = s[0]
-                target = sessions[i][j + 1][0]
+                target = sessions[str(i)][j + 1][0]
                 if loc in topk and target in topk:
                     r = topk.index(loc)
                     c = topk.index(target)
@@ -471,9 +471,9 @@ def markov(parameters, candidate):
         user_acc[u] = 0
         test_id = parameters.data_neural[u]['test']
         for i in test_id:
-            for j, s in enumerate(sessions[i][:-1]):
+            for j, s in enumerate(sessions[str(i)][:-1]):
                 loc = s[0]
-                target = sessions[i][j + 1][0]
+                target = sessions[str(i)][j + 1][0]
                 count += 1
                 user_count += 1
                 if loc in topk:
