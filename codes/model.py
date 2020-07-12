@@ -47,11 +47,11 @@ class TrajPreSimple(nn.Module):
         b = (param.data for name, param in self.named_parameters() if 'bias' in name)
 
         for t in ih:
-            nn.init.xavier_uniform(t)
+            nn.init.xavier_uniform_(t)
         for t in hh:
-            nn.init.orthogonal(t)
+            nn.init.orthogonal_(t)
         for t in b:
-            nn.init.constant(t, 0)
+            nn.init.constant_(t, 0)
 
     def forward(self, loc, tim):
         h1 = Variable(torch.zeros(1, 1, self.hidden_size))
@@ -74,7 +74,7 @@ class TrajPreSimple(nn.Module):
         out = self.dropout(out)
 
         y = self.fc(out)
-        score = F.log_softmax(y)  # calculate loss by NLLoss
+        score = F.log_softmax(y, dim=1)  # calculate loss by NLLoss
         return score
 
 
@@ -102,7 +102,7 @@ class Attn(nn.Module):
         for i in range(state_len):
             for j in range(seq_len):
                 attn_energies[i, j] = self.score(out_state[i], history[j])
-        return F.softmax(attn_energies)
+        return F.softmax(attn_energies, dim=1)
 
     def score(self, hidden, encoder_output):
         if self.method == 'dot':
@@ -163,11 +163,11 @@ class TrajPreAttnAvgLongUser(nn.Module):
         b = (param.data for name, param in self.named_parameters() if 'bias' in name)
 
         for t in ih:
-            nn.init.xavier_uniform(t)
+            nn.init.xavier_uniform_(t)
         for t in hh:
-            nn.init.orthogonal(t)
+            nn.init.orthogonal_(t)
         for t in b:
-            nn.init.constant(t, 0)
+            nn.init.constant_(t, 0)
 
     def forward(self, loc, tim, history_loc, history_tim, history_count, uid, target_len):
         h1 = Variable(torch.zeros(1, 1, self.hidden_size))
@@ -196,7 +196,7 @@ class TrajPreAttnAvgLongUser(nn.Module):
             count += c
 
         history = torch.cat((loc_emb_history2, tim_emb_history2), 1)
-        history = F.tanh(self.fc_attn(history))
+        history = torch.tanh(self.fc_attn(history))
 
         if self.rnn_type == 'GRU' or self.rnn_type == 'RNN':
             out_state, h1 = self.rnn(x, h1)
@@ -214,7 +214,7 @@ class TrajPreAttnAvgLongUser(nn.Module):
         out = self.dropout(out)
 
         y = self.fc_final(out)
-        score = F.log_softmax(y)
+        score = F.log_softmax(y, dim=1)
 
         return score
 
@@ -263,11 +263,11 @@ class TrajPreLocalAttnLong(nn.Module):
         b = (param.data for name, param in self.named_parameters() if 'bias' in name)
 
         for t in ih:
-            nn.init.xavier_uniform(t)
+            nn.init.xavier_uniform_(t)
         for t in hh:
-            nn.init.orthogonal(t)
+            nn.init.orthogonal_(t)
         for t in b:
-            nn.init.constant(t, 0)
+            nn.init.constant_(t, 0)
 
     def forward(self, loc, tim, target_len):
         h1 = Variable(torch.zeros(1, 1, self.hidden_size))
@@ -300,6 +300,6 @@ class TrajPreLocalAttnLong(nn.Module):
         out = self.dropout(out)
 
         y = self.fc_final(out)
-        score = F.log_softmax(y)
+        score = F.log_softmax(y, dim=1)
 
         return score

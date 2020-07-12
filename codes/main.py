@@ -91,7 +91,10 @@ def run(args):
                                                        len([y for x in test_idx for y in test_idx[x]])))
     SAVE_PATH = args.save_path
     tmp_path = 'checkpoint/'
-    os.mkdir(SAVE_PATH + tmp_path)
+    try:
+        os.mkdir(SAVE_PATH + tmp_path)
+    except:
+        pass
     for epoch in range(parameters.epoch):
         st = time.time()
         if args.pretrain == 0:
