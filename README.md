@@ -59,5 +59,14 @@ Other parameters (refer to [main.py](https://github.com/vonfeng/DeepMove/blob/ma
     - loc_emb_size, uid_emb_size, tim_emb_size, hidden_size, rnn_type, attn_type
     - history_mode: avg, avg, whole
 
-# Others
-Batch version for this project will come soon.
+# Citation
+If you find this work helpful, please cite our paper.
+```latex
+@inproceedings{feng2018deepmove,
+  title={Deepmove: Predicting human mobility with attentional recurrent networks},
+  author={Feng, Jie and Li, Yong and Zhang, Chao and Sun, Funing and Meng, Fanchao and Guo, Ang and Jin, Depeng},
+  booktitle={Proceedings of the 2018 world wide web conference},
+  pages={1459--1468},
+  year={2018}
+}
+```
