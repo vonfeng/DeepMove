@@ -1,3 +1,6 @@
+# 💡Update
+We are excited to announce [AgentMove](https://github.com/tsinghua-fib-lab/AgentMove), an LLM-based agentic framework designed for zero-shot mobility prediction. Leveraging the world knowledge and sequential modeling capabilities of LLMs, AgentMove paves the way for a promising new direction in mobility prediction.
+
 # DeepMove
 PyTorch implementation of WWW'18  paper-DeepMove: Predicting Human Mobility with Attentional Recurrent Networks [link](https://dl.acm.org/citation.cfm?id=3178876.3186058)
 
